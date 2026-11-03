@@ -1,0 +1,52 @@
+name: Site demonstrativo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'scripts/preparar_site.py'
+      - '.github/workflows/pages.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    permissions:
+      contents: read
+      pages: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Preparar somente os arquivos públicos do site
+        run: python3 scripts/preparar_site.py
+      - name: Conferir JavaScript
+        run: |
+          for file in web/*.js; do
+            node --input-type=module --check < "$file"
+          done
+      - name: Conferir contrato do catálogo
+        run: node web/test-contract.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+  deploy:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publicar demonstração
+        id: deployment
+        uses: actions/deploy-pages@v4

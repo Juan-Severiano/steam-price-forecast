@@ -15,3 +15,6 @@ data/*
 
 # Configuracao local do app Claude Code.
 .claude/
+
+# Saída estática gerada; o workflow publica somente o pacote permitido.
+_site/

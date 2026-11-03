@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#142334">
+  <meta name="description" content="Explore um laboratório de previsão de preços de jogos da Steam. Compare a possibilidade de pagar menos em 30 ou 90 dias e veja como o modelo funciona.">
+  <title>Steam Forecast — comprar agora ou esperar?</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#explorar">Pular para os jogos</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#inicio" aria-label="Steam Forecast, início">
+        <svg class="brand-mark" viewBox="0 0 36 36" aria-hidden="true"><path d="M4 7h28v22H4z"/><path d="M9 14h6v8h7v-5h6"/><circle cx="28" cy="17" r="2"/></svg>
+        <span>STEAM<span class="brand-light">FORECAST</span></span>
+      </a>
+      <nav aria-label="Navegação principal">
+        <a class="nav-active" href="#explorar">Explorar</a>
+        <a href="#como-funciona">Como funciona</a>
+        <a href="#terminal">Terminal</a>
+      </nav>
+      <a class="source-link" href="https://github.com/Juan-Severiano/steam-price-forecast" target="_blank" rel="noopener noreferrer">Código aberto <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+
+  <main id="inicio" class="page-shell">
+    <section class="intro" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow"><span class="tiny-line" aria-hidden="true"></span> UM EXPERIMENTO SOBRE O TEMPO DE COMPRAR</p>
+        <h1 id="page-title">Comprar agora <span>ou esperar?</span></h1>
+        <p class="intro-copy">Seu próximo jogo pode esperar. Explore o histórico e a possibilidade<br class="desktop-break"> de um preço menor nos próximos 30 ou 90 dias.</p>
+      </div>
+      <div class="region-note"><span class="region-symbol" aria-hidden="true">R$</span><div>Brasil · Real brasileiro<small>Jogos da loja Steam</small></div></div>
+    </section>
+
+    <div id="data-notice" class="data-notice">
+      <div class="notice-content"><span id="mode-badge" class="mode-badge">DEMONSTRAÇÃO</span><p id="mode-description">Preços e previsões simulados para explorar a interface.</p></div>
+      <div class="notice-actions"><button id="restore-demo" class="text-button" type="button" hidden>Voltar à demonstração</button><button id="import-button" class="import-button" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3m-4 4 4-4 4 4M3 12v5h14v-5"/></svg> Abrir dados locais</button></div>
+      <input id="import-file" class="visually-hidden" type="file" accept="application/json,.json" tabindex="-1" aria-label="Arquivo JSON do catálogo local">
+    </div>
+    <p id="import-feedback" class="import-feedback" role="status" aria-live="polite"></p>
+
+    <section id="explorar" class="workspace" aria-label="Explorar preços dos jogos">
+      <aside class="catalog" aria-labelledby="catalog-title">
+        <div class="catalog-heading"><h2 id="catalog-title">Escolha seu jogo</h2><span id="catalog-count" class="count-pill">8</span></div>
+        <label class="search-box" for="game-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><input id="game-search" aria-label="Buscar jogo pelo nome" type="search" placeholder="Buscar um jogo…" autocomplete="off" spellcheck="false"></label>
+        <div class="catalog-filters" aria-label="Filtrar por preço"><button type="button" class="filter-button is-active" data-filter="all" aria-pressed="true">Todos</button><button type="button" class="filter-button" data-filter="budget" aria-pressed="false">Até R$ 60</button></div>
+        <div id="games-list" class="games-list" aria-label="Jogos disponíveis"></div>
+        <div id="search-empty" class="search-empty" hidden><span aria-hidden="true">⌕</span><h3>Nenhum jogo encontrado</h3><p>Tente outro nome ou remova o filtro de preço.</p><button id="clear-search" class="text-button" type="button">Limpar busca e filtro</button></div>
+        <p class="catalog-note" id="catalog-note">8 jogos para experimentar.<br>Valores fictícios, capas da Steam.</p>
+      </aside>
+
+      <article class="game-detail" aria-labelledby="selected-title">
+        <div id="game-banner" class="game-banner">
+          <img id="selected-cover" class="selected-cover" alt="" fetchpriority="high" referrerpolicy="no-referrer">
+          <div class="banner-shade"></div>
+          <div class="banner-top"><span class="platform-label"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 4h12v9H3zM6 16h6M9 13v3"/></svg> STEAM · PC</span><span id="game-data-label" class="banner-badge">EXEMPLO SIMULADO</span></div>
+          <div class="banner-bottom"><div><p class="eyebrow" id="game-category">VIDA NO CAMPO · COOPERATIVO</p><h2 id="selected-title">Stardew Valley</h2></div><a id="steam-link" class="store-link" target="_blank" rel="noopener noreferrer" href="https://store.steampowered.com/app/413150/" aria-label="Ver Stardew Valley na Steam">Ver na Steam <span aria-hidden="true">↗</span></a></div>
+        </div>
+
+        <div class="detail-body">
+          <div class="forecast-topline"><div class="current-price"><span id="current-price-label" class="small-label">PREÇO NO EXEMPLO</span><div><strong id="current-price">R$ 36,00</strong><span id="current-discount" class="discount-tag" hidden></span></div><span id="regular-price" class="regular-price"></span></div><fieldset class="horizon-fieldset"><legend>Quanto tempo você pode esperar?</legend><div class="segmented-control"><button type="button" data-horizon="30" class="horizon-button is-active" aria-pressed="true">30 dias</button><button type="button" data-horizon="90" class="horizon-button" aria-pressed="false">90 dias</button></div></fieldset></div>
+
+          <div id="prediction-panel" class="prediction-panel">
+            <section class="chance-panel" aria-labelledby="chance-title"><p id="chance-title" class="small-label">CHANCE DE PAGAR MENOS</p><div class="chance-value"><strong id="chance-value">68<span>%</span></strong><svg class="chance-trend" viewBox="0 0 70 34" aria-hidden="true"><path d="M2 8h18v8h17v8h29m-8-8 8 8-8 8"/></svg></div><p id="chance-description">de um preço menor nos próximos 30 dias.</p><div class="chance-track" aria-hidden="true"><span id="chance-fill"></span></div></section>
+            <section class="minimum-panel" aria-labelledby="minimum-title"><p id="minimum-title" class="small-label">FAIXA DO MENOR PREÇO · P10–P90</p><div class="minimum-value" id="minimum-range">R$ 18,00 <span>–</span> R$ 36,00</div><div class="range-track" aria-hidden="true"><span></span><i id="median-tick"></i></div><p id="median-description">Estimativa central (P50): <strong>R$ 24,00</strong></p></section>
+          </div>
+          <div id="prediction-empty" class="prediction-empty" hidden><h3>Ainda sem previsão para este período</h3><p>O histórico está disponível abaixo. Gere as previsões no projeto e abra o catálogo atualizado para comparar a espera.</p></div>
+
+          <section class="history-section" aria-labelledby="history-title">
+            <div class="chart-heading"><div><h3 id="history-title">O preço ao longo do tempo</h3><p id="chart-subtitle">Histórico ilustrativo · últimos 180 dias</p></div><div class="chart-legend"><span><i class="legend-dot history-dot"></i> Histórico</span><span><i class="legend-dot forecast-dot"></i> Faixa estimada</span></div></div>
+            <div class="chart-wrap" id="chart-wrap"><svg id="price-chart" viewBox="0 0 800 255" role="img" aria-labelledby="chart-svg-title chart-svg-description"></svg><div id="chart-tooltip" class="chart-tooltip" hidden></div></div>
+            <p id="chart-caption" class="chart-caption">A faixa indica o menor preço possível ao comprar agora ou esperar. Não é uma trajetória nem uma promessa de desconto.</p>
+            <details class="history-table-details"><summary>Ver os valores do histórico</summary><div class="history-table-scroll"><table><caption id="history-table-caption">Mudanças de preço exibidas no gráfico</caption><thead><tr><th scope="col">Data</th><th scope="col">Preço</th><th scope="col">Preço cheio</th></tr></thead><tbody id="history-table-body"></tbody></table></div></details>
+          </section>
+          <div class="detail-foot"><span id="base-date">Base do exemplo: 02 nov. 2026</span><span id="detail-origin">Dados sintéticos · sem cotação ao vivo</span></div>
+        </div>
+      </article>
+    </section>
+
+    <section id="como-funciona" class="method-section" aria-labelledby="method-title">
+      <div class="section-heading"><div><p class="eyebrow">ANTES DE CONFIAR EM UMA PREVISÃO</p><h2 id="method-title">O que há por trás da espera.</h2></div><a class="text-link" href="https://github.com/Juan-Severiano/steam-price-forecast#readme" target="_blank" rel="noopener noreferrer">Ler a metodologia <span aria-hidden="true">↗</span></a></div>
+      <div class="method-grid">
+        <article class="method-item"><div class="method-icon" aria-hidden="true"><svg viewBox="0 0 30 30"><path d="M5 5v20h22M9 10h5v7h6v-4h5"/><circle cx="25" cy="13" r="2"/></svg></div><h3>O histórico é o ponto de partida</h3><p>O projeto coleta mudanças de preço dos jogos e monta séries diárias. O catálogo real é gerado na sua máquina; os exemplos desta página são sintéticos.</p></article>
+        <article class="method-item"><div class="method-icon" aria-hidden="true"><svg viewBox="0 0 30 30"><path d="M4 8h22M8 4v8M22 4v8M4 8v18h22V8M9 17h4v4H9m9-4h4v4h-4"/></svg></div><h3>O futuro fica fora do treino</h3><p>O modelo aprende com o que já era conhecido em cada data e é comparado com regras simples. Acertar o passado não garante o próximo desconto.</p></article>
+        <article class="method-item"><div class="method-icon" aria-hidden="true"><svg viewBox="0 0 30 30"><path d="M4 15h22M4 10v10M26 10v10M15 5v20"/><circle cx="15" cy="15" r="3"/></svg></div><h3>Uma faixa, não uma certeza</h3><p>P10, P50 e P90 descrevem a incerteza sobre o menor preço do período. A cobertura precisa ser medida: a faixa nominal de 80% pode falhar mais do que isso.</p></article>
+      </div>
+      <div class="method-footnote"><span class="footnote-mark" aria-hidden="true">i</span><p><strong>Jogos e itens são problemas diferentes.</strong> Os resultados de skins e caixas do CS2 publicados no README pertencem a outro módulo. Eles não comprovam a qualidade das previsões de jogos.</p></div>
+    </section>
+
+    <section id="terminal" class="terminal-section" aria-labelledby="terminal-title">
+      <div class="terminal-intro"><p class="eyebrow">DO DADO À PREVISÃO</p><h2 id="terminal-title">Veja o processo<br>por dentro.</h2><p>Uma simulação do fluxo no terminal, da escolha dos jogos até a avaliação do modelo.</p><span class="simulation-label"><span aria-hidden="true">◉</span> Simulação · não executa comandos</span><a class="text-link" href="https://github.com/Juan-Severiano/steam-price-forecast#uso" target="_blank" rel="noopener noreferrer">Rodar o projeto na sua máquina <span aria-hidden="true">↗</span></a></div>
+      <div class="terminal-window"><div class="terminal-bar"><div class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></div><span>steam-forecast / fluxo demonstrativo</span><button id="terminal-reset" class="terminal-reset" type="button" aria-label="Reiniciar simulação">↻ <span>Reiniciar</span></button></div><div id="terminal-output" class="terminal-output" role="log" aria-label="Saída da simulação" aria-live="off"></div><div class="terminal-footer"><span id="terminal-status" role="status">Pronto para começar</span><button id="terminal-play" class="terminal-play" type="button"><span aria-hidden="true">▶</span> Executar simulação</button></div></div>
+    </section>
+
+    <section class="local-help" aria-labelledby="local-help-title"><div><h2 id="local-help-title">Seus dados ficam com você.</h2><p>Abra o JSON exportado pelo projeto para explorar o catálogo real. O arquivo é lido apenas nesta aba, sem upload. Ao recarregar a página, a demonstração volta.</p></div><button id="import-button-bottom" class="secondary-button" type="button">Abrir catálogo local <span aria-hidden="true">↗</span></button></section>
+  </main>
+
+  <footer class="site-footer"><div class="footer-inner"><a class="footer-brand" href="#inicio">STEAM FORECAST</a><p>Experimento independente. Sem afiliação com Valve ou IsThereAnyDeal.<br>Capas: Steam e seus respectivos titulares. Histórico local: <a href="https://isthereanydeal.com" target="_blank" rel="noopener noreferrer">IsThereAnyDeal</a>.</p><a href="https://github.com/Juan-Severiano/steam-price-forecast" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a></div></footer>
+  <noscript><div class="noscript-notice">Ative o JavaScript para explorar os jogos e os gráficos. A metodologia e o código estão disponíveis nos links desta página.</div></noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
