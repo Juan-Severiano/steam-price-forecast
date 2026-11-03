@@ -16,6 +16,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+ml = [
+    "scikit-learn>=1.5",
+]
 
 [project.scripts]
 steam-forecast = "steam_forecast.cli:main"

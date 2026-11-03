@@ -9,7 +9,9 @@ from pathlib import Path
 
 from steam_forecast.avaliacao import avaliar, filtrar_series, tabela_markdown
 from steam_forecast.coleta import coletar, listar_historicos
-from steam_forecast.env import CookieAusente, avisos, carregar_cookie
+from steam_forecast.env import ChaveAusente, CookieAusente, avisos, carregar_chave_itad, carregar_cookie
+from steam_forecast.itad import ChaveRecusada, ClienteITAD
+from steam_forecast.jogos import coletar_jogos, montar_universo
 from steam_forecast.limitador import Limitador
 from steam_forecast.series import diaria
 from steam_forecast.steam import ClienteSteam, LimiteExcedido
@@ -74,6 +76,78 @@ def _avaliar(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cliente_itad(args: argparse.Namespace, intervalo: float) -> ClienteITAD | None:
+    try:
+        chave = carregar_chave_itad(args.env)
+    except ChaveAusente as erro:
+        print(erro, file=sys.stderr)
+        return None
+    return ClienteITAD(chave, limitador=Limitador(intervalo, jitter_s=0.1))
+
+
+def _jogos_universo(args: argparse.Namespace) -> int:
+    cliente = _cliente_itad(args, 0.5)
+    if cliente is None:
+        return 2
+    try:
+        universo = montar_universo(cliente, args.por_ranking)
+    except (LimiteExcedido, ChaveRecusada) as erro:
+        print(f"parei: {erro}", file=sys.stderr)
+        return 1
+    finally:
+        cliente.fechar()
+    args.saida.parent.mkdir(parents=True, exist_ok=True)
+    args.saida.write_text(json.dumps(universo, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"{len(universo)} jogos da Steam em {args.saida}")
+    return 0
+
+
+def _jogos_coletar(args: argparse.Namespace) -> int:
+    cliente = _cliente_itad(args, args.intervalo)
+    if cliente is None:
+        return 2
+    jogos = json.loads(args.universo.read_text(encoding="utf-8"))
+    try:
+        resumo = coletar_jogos(cliente, jogos, args.destino, max_jogos=args.max_jogos, atualizar=args.atualizar)
+    finally:
+        cliente.fechar()
+    print(f"baixados {resumo.baixados}, já existiam {resumo.ja_existiam}, falhas {len(resumo.falhas)}")
+    if resumo.interrompida_por:
+        print(f"interrompida: {resumo.interrompida_por}. O progresso está salvo; rode de novo para retomar.", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _modelo(args: argparse.Namespace) -> int:
+    import time
+    from datetime import date
+
+    from steam_forecast.modelo import Configuracao, dia_absoluto, executar
+    from steam_forecast.modelo import tabela_markdown as tabela_ml
+
+    series = [s for s in (diaria(h) for h in listar_historicos(args.dados)) if s is not None]
+    elegiveis = filtrar_series(series, min_dias=args.min_dias, min_vendas_por_dia=args.min_vendas)
+    inicio = dia_absoluto(date.fromisoformat(args.inicio_teste))
+    print(f"{len(series)} séries, {len(elegiveis)} elegíveis; teste a partir de {args.inicio_teste}, retreino a cada {args.retreino} dias\n")
+    resultados = []
+    for h in args.horizonte:
+        cfg = Configuracao(
+            horizonte=h,
+            inicio_teste=inicio,
+            retreino=args.retreino,
+            passo_treino=args.passo_treino,
+            iteracoes=args.iteracoes,
+        )
+        t0 = time.monotonic()
+        resultado = executar(elegiveis, cfg, log=lambda msg: print(msg, file=sys.stderr, flush=True))
+        resultado["segundos"] = round(time.monotonic() - t0)
+        resultados.append(resultado)
+        print(tabela_ml(resultado), f"\n\n({resultado['segundos']} s)", end="\n\n", flush=True)
+    if args.saida:
+        args.saida.write_text(json.dumps(resultados, ensure_ascii=False, indent=1), encoding="utf-8")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="steam-forecast", description=__doc__)
     sub = ap.add_subparsers(dest="comando", required=True)
@@ -104,8 +178,35 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--saida", type=Path, default=None)
     a.set_defaults(func=_avaliar)
 
+    m = sub.add_parser("modelo", help="gradient boosting com quantis em janela deslizante, contra os baselines (precisa do extra ml)")
+    m.add_argument("--dados", type=Path, default=DADOS / "raw")
+    m.add_argument("--horizonte", type=int, action="append", help="dias; repita para vários (padrão: 7 e 30)")
+    m.add_argument("--inicio-teste", default="2023-01-01", help="primeira origem de teste, AAAA-MM-DD")
+    m.add_argument("--retreino", type=int, default=90, help="dias entre um treino e o seguinte")
+    m.add_argument("--passo-treino", type=int, default=2, help="usa uma linha de treino a cada N dias de cada item")
+    m.add_argument("--iteracoes", type=int, default=150)
+    m.add_argument("--min-dias", type=int, default=500)
+    m.add_argument("--min-vendas", type=float, default=3.0)
+    m.add_argument("--saida", type=Path, default=None)
+    m.set_defaults(func=_modelo)
+
+    ju = sub.add_parser("jogos-universo", help="jogos populares da Steam pelo ranking do IsThereAnyDeal (usa a chave do .env)")
+    ju.add_argument("--por-ranking", type=int, default=1500, help="quantos pegar de cada ranking (popular e colecionado)")
+    ju.add_argument("--env", type=Path, default=Path(".env"))
+    ju.add_argument("--saida", type=Path, default=DADOS / "jogos" / "universo.json")
+    ju.set_defaults(func=_jogos_universo)
+
+    jc = sub.add_parser("jogos-coletar", help="baixa o histórico de preço de cada jogo no IsThereAnyDeal (BRL, desde o lançamento)")
+    jc.add_argument("--universo", type=Path, default=DADOS / "jogos" / "universo.json")
+    jc.add_argument("--destino", type=Path, default=DADOS / "jogos" / "historico")
+    jc.add_argument("--env", type=Path, default=Path(".env"))
+    jc.add_argument("--intervalo", type=float, default=0.5, help="segundos entre chamadas (o limite do ITAD é 1.000 a cada 5 min)")
+    jc.add_argument("--max-jogos", type=int, default=None, help="começar pequeno, por exemplo 20")
+    jc.add_argument("--atualizar", action="store_true", help="baixa de novo o que já existe")
+    jc.set_defaults(func=_jogos_coletar)
+
     args = ap.parse_args(argv)
-    if args.comando == "avaliar" and not args.horizonte:
+    if args.comando in ("avaliar", "modelo") and not args.horizonte:
         args.horizonte = [7, 30]
     return args.func(args)
 
