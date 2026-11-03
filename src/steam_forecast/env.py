@@ -15,7 +15,8 @@ from pathlib import Path
 
 LOGIN = "STEAM_LOGIN_SECURE"
 SESSAO = "STEAM_SESSIONID"
-NOMES = (LOGIN, SESSAO)
+ITAD = "ITAD_API_KEY"
+NOMES = (LOGIN, SESSAO, ITAD)
 
 
 class CookieAusente(RuntimeError):
@@ -103,3 +104,26 @@ def avisos(cookie: Cookie, agora: datetime | None = None) -> list[str]:
         if datetime.fromtimestamp(exp, tz=timezone.utc) <= agora:
             saida.append("o cookie já venceu: entre de novo na Steam no navegador e copie o valor novo")
     return saida
+
+
+class ChaveAusente(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class ChaveITAD:
+    # repr=False: um print ou traceback do objeto não mostra o valor.
+    valor: str = field(repr=False)
+
+
+def carregar_chave_itad(
+    caminho_env: Path | None = None, ambiente: Mapping[str, str] | None = None
+) -> ChaveITAD:
+    """Variável de ambiente vence o arquivo. Sem ITAD_API_KEY, levanta ChaveAusente."""
+    ambiente = os.environ if ambiente is None else ambiente
+    do_arquivo = ler_dotenv(caminho_env) if caminho_env is not None else {}
+    valor = ambiente.get(ITAD) or do_arquivo.get(ITAD)
+    if not valor:
+        onde = f" nem em {caminho_env}" if caminho_env is not None else ""
+        raise ChaveAusente(f"{ITAD} não está definido no ambiente{onde}. Veja .env.example.")
+    return ChaveITAD(valor=valor)

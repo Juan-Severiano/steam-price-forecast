@@ -4,7 +4,16 @@ from datetime import datetime, timezone
 
 import pytest
 
-from steam_forecast.env import Cookie, CookieAusente, avisos, carregar_cookie, ler_dotenv
+from steam_forecast.env import (
+    ChaveAusente,
+    ChaveITAD,
+    Cookie,
+    CookieAusente,
+    avisos,
+    carregar_chave_itad,
+    carregar_cookie,
+    ler_dotenv,
+)
 
 SEGREDO = "valor-secreto-123"
 
@@ -52,6 +61,23 @@ def test_repr_e_str_nao_mostram_o_valor():
 def test_cabecalho_inclui_sessionid_so_quando_existe():
     assert Cookie(login_secure="a").cabecalho() == "steamLoginSecure=a"
     assert Cookie(login_secure="a", sessionid="b").cabecalho() == "steamLoginSecure=a; sessionid=b"
+
+
+def test_chave_do_itad_vem_do_arquivo_e_o_ambiente_vence(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("STEAM_LOGIN_SECURE=x\nITAD_API_KEY=do-arquivo\n", encoding="utf-8")
+    assert carregar_chave_itad(env, ambiente={}).valor == "do-arquivo"
+    assert carregar_chave_itad(env, ambiente={"ITAD_API_KEY": "do-ambiente"}).valor == "do-ambiente"
+
+
+def test_sem_chave_do_itad_levanta_sem_vazar_nada(tmp_path):
+    with pytest.raises(ChaveAusente) as erro:
+        carregar_chave_itad(tmp_path / ".env", ambiente={})
+    assert "ITAD_API_KEY" in str(erro.value)
+
+
+def test_repr_da_chave_do_itad_nao_mostra_o_valor():
+    assert "segredo-do-itad" not in repr(ChaveITAD(valor="segredo-do-itad"))
 
 
 AGORA = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
