@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from steam_forecast.coleta import ESPERA_429, Resumo
+from steam_forecast.coleta import Resumo
 from steam_forecast.itad import (
     ChaveRecusada,
     ClienteITAD,
@@ -25,6 +25,12 @@ from steam_forecast.itad import (
 from steam_forecast.steam import LimiteExcedido
 
 _SEM_POSICAO = 10**9
+# Reserva para o 429 sem `Retry-After`, em segundos.
+ESPERA_429_ITAD = (30, 120, 300)
+
+
+def _imprimir(mensagem: str) -> None:
+    print(mensagem, flush=True)  # sem flush, a saída de um processo em segundo plano só aparece no fim
 
 
 def montar_universo(cliente: ClienteITAD, por_ranking: int = 1500) -> list[dict]:
@@ -79,10 +85,10 @@ def coletar_jogos(
     *,
     max_jogos: int | None = None,
     atualizar: bool = False,
-    espera_429: tuple[int, ...] = ESPERA_429,
+    espera_429: tuple[int, ...] = ESPERA_429_ITAD,
     falhas_seguidas_max: int = 5,
     dormir: Callable[[float], None] = time.sleep,
-    log: Callable[[str], None] = print,
+    log: Callable[[str], None] = _imprimir,
 ) -> Resumo:
     resumo = Resumo()
     seguidas = 0
@@ -108,7 +114,8 @@ def coletar_jogos(
                 if tentativa >= len(espera_429):
                     resumo.interrompida_por = "429 persistente: o ITAD pediu para esperar, tente mais tarde"
                     return resumo
-                espera = max(erro.retry_after or 0, espera_429[tentativa])
+                # A API manda `Retry-After` no 429: obedecer esse valor (mais 1 s de folga); a tabela é só reserva.
+                espera = erro.retry_after + 1 if erro.retry_after else espera_429[tentativa]
                 log(f"429 em {titulo!r}: esperando {espera} s (tentativa {tentativa + 1}/{len(espera_429)})")
                 dormir(espera)
                 tentativa += 1

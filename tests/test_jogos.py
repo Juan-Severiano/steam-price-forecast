@@ -164,10 +164,19 @@ def test_chave_recusada_para_e_guarda_o_que_ja_veio(tmp_path):
     assert [h.appid for h in listar_historicos_jogos(tmp_path)] == [1]
 
 
-def test_429_espera_o_maior_entre_retry_after_e_a_tabela_e_tenta_de_novo(tmp_path):
+def test_429_obedece_o_retry_after_e_so_usa_a_tabela_quando_ele_nao_vem(tmp_path):
     dormiu = []
-    r = _coletar(ClienteFalso([LimiteExcedido(1000), LimiteExcedido(None), BRUTO]), _jogos(1), tmp_path, dormir=dormiu.append)
-    assert r.baixados == 1 and dormiu == [1000, 900]
+    cliente = ClienteFalso([LimiteExcedido(2), LimiteExcedido(None), BRUTO])
+    r = _coletar(cliente, _jogos(1), tmp_path, dormir=dormiu.append, espera_429=(30, 120, 300))
+    assert r.baixados == 1
+    assert dormiu == [3, 120]  # Retry-After 2 s + 1 s de folga, não um piso de 300 s; depois a tabela
+
+
+def test_429_curto_nao_trava_a_rodada(tmp_path):
+    dormiu = []
+    cliente = ClienteFalso([BRUTO, LimiteExcedido(1), BRUTO, BRUTO])
+    r = _coletar(cliente, _jogos(1, 2, 3), tmp_path, dormir=dormiu.append)
+    assert r.baixados == 3 and sum(dormiu) < 10
 
 
 def test_429_persistente_interrompe_sem_gravar(tmp_path):
