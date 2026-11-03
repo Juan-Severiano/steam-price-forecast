@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+
+# Cookie da sessao Steam: so existe na maquina do dono, nunca versionado.
+.env
+
+# Dado da Steam (historico por item, universo, resultados): baixado por script,
+# nao versionado nem redistribuido. O repositorio publica codigo e metricas agregadas.
+data/*
+!data/.gitkeep
+
+# Configuracao local do app Claude Code.
+.claude/
