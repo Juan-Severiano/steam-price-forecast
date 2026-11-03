@@ -2,7 +2,7 @@
 
 Previsão de preço de itens do Mercado da Comunidade Steam (skins e caixas de CS2, itens de Dota 2 e outros). A pergunta: **onde o preço de um item pode estar daqui a 7 e 30 dias?** A resposta é um **intervalo** (P10, P50, P90), e o projeto mede se esse intervalo ganha de "o preço de amanhã é o de hoje".
 
-> **Estado:** coleta do histórico, séries diárias e baselines em janela deslizante prontos. Os modelos de ML ainda não existem e **não há resultado publicado**. Isto não é recomendação financeira.
+> **Estado:** coleta do histórico, séries diárias e baselines em janela deslizante prontos e medidos em 232 itens do CS2 ([resultados](#resultados-dos-baselines)). O modelo de ML ainda não existe: o que está medido é o **piso que ele precisa vencer**. Isto não é recomendação financeira.
 
 ## Como funciona
 
@@ -47,6 +47,34 @@ uv run steam-forecast avaliar --horizonte 7 --horizonte 30
 ```
 
 Rode a partir da raiz do projeto (o `.env` e o `data/` são caminhos relativos). `appid` 730 é CS2, 570 é Dota 2 e 440 é TF2.
+
+## Resultados dos baselines
+
+Medidos em 03/11/2026 sobre os 300 itens mais negociados do CS2 naquele dia. A lista tem 284 nomes distintos, porque o ranking da Steam muda entre uma página e outra; pelo nome, cerca de 224 são skins de arma, 32 caixas, 20 cápsulas, 14 adesivos, 8 souvenirs e 2 itens selados. Passaram no filtro (pelo menos 500 dias de histórico e 3 vendas por dia) **232 itens**. As origens são a cada 7 dias, com pelo menos 365 dias de histórico antes. Preços em R$.
+
+**Horizonte 7 dias** - 232 itens, 59.911 origens
+
+| Modelo | MAE da mediana | Pinball | vs naive+erro | Cobertura P10-P90 | Largura |
+|---|---|---|---|---|---|
+| naive (pontual) | 0,0630 | 0,0315 | +43,1% | - | - |
+| **naive + erro empírico** | 0,0633 | **0,0220** | referência | 80,0% | 0,194 |
+| média móvel 30d + erro empírico | 0,0921 | 0,0311 | +41,4% | 78,9% | 0,292 |
+
+**Horizonte 30 dias** - 232 itens, 59.192 origens
+
+| Modelo | MAE da mediana | Pinball | vs naive+erro | Cobertura P10-P90 | Largura |
+|---|---|---|---|---|---|
+| naive (pontual) | 0,1246 | 0,0623 | +44,5% | - | - |
+| **naive + erro empírico** | 0,1279 | **0,0431** | referência | 77,9% | 0,399 |
+| média móvel 30d + erro empírico | 0,1504 | 0,0503 | +16,7% | 75,2% | 0,467 |
+
+Como ler:
+
+- Pinball menor é melhor. Na mediana, o naive pontual e o naive com intervalo empatam (0,0630 e 0,0633 em 7 dias); o que o intervalo acrescenta é a cobertura. O P10 a P90 cobre 80,0% a 7 dias e 77,9% a 30 (o nominal é 80%), então o de 30 dias fica um pouco estreito.
+- A largura é em log: 0,194 a 7 dias é um topo cerca de 21% acima do piso do intervalo; 0,399 a 30 dias, cerca de 49%.
+- A média móvel de 30 dias perde nos dois horizontes: apostar na volta à média não ajudou.
+- **Isto é o piso que um modelo de ML precisa vencer, não resultado de ML.** As origens se sobrepõem, a média simples pesa mais os itens de histórico longo, os itens se movem juntos (não são 232 amostras independentes) e é um único dia de coleta num único regime de mercado.
+- O dado bruto não está no repositório. Para reproduzir, rode os comandos acima; a lista de popularidade muda, então os números vão variar.
 
 ## Limites conhecidos
 
