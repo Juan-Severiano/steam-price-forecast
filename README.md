@@ -1,10 +1,77 @@
 # steam-price-forecast
 
-Previsão de preço de itens do Mercado da Comunidade Steam (skins e caixas de CS2, itens de Dota 2 e outros). A pergunta: **onde o preço de um item pode estar daqui a 7 e 30 dias?** A resposta é um **intervalo** (P10, P50, P90), e o projeto mede se esse intervalo ganha de "o preço de amanhã é o de hoje".
+Laboratório de previsão de preços de **jogos da loja Steam**, em reais. A pergunta: **qual a chance de encontrar um preço menor se eu esperar 30 ou 90 dias?** O projeto compara regras simples com gradient boosting e estima P10, P50 e P90 do menor preço nesse período.
 
-> **Estado:** duas frentes. **Itens do mercado:** coleta, baselines e um modelo de gradient boosting com quantis, medidos em 232 itens do CS2 ([baselines](#resultados-dos-baselines), [modelo](#modelo-de-ml-dos-itens)). **Jogos da loja** (preço de jogo, como o Stardew Valley): universo e coleta do histórico prontos, [modelo ainda não](#jogos-da-loja-em-andamento). Isto não é recomendação financeira.
+> **Estado em 03/11/2026:** coleta dos 1.160 jogos concluída; séries diárias, baselines, classificação e quantis medidos em avaliação temporal ([resultados](#resultados-dos-jogos-em-03112026)). Interface estática em `web/`, com exemplos sintéticos e importação de catálogo local. A [demonstração no GitHub Pages](https://juan-severiano.github.io/steam-price-forecast/) usa somente dados sintéticos; o catálogo real pode ser aberto localmente na interface. O módulo anterior de **itens do mercado** permanece separado, com resultados em 232 itens do CS2; seus resultados não são resultados de jogos.
 
-## Como funciona
+## Uso
+
+```bash
+uv sync --extra dev --extra ml
+uv run pytest
+
+# Grave ITAD_API_KEY em .env (fora do git), conforme .env.example.
+uv run steam-forecast jogos-universo
+uv run steam-forecast jogos-coletar
+uv run steam-forecast jogos-status
+
+# Mesmas origens para todos os modelos; padrão: horizontes 30 e 90 dias.
+uv run steam-forecast jogos-avaliar
+
+# Arquivo privado em data/jogos/catalogo-local.json.
+uv run steam-forecast jogos-exportar
+
+# Apenas a interface demonstrativa é servida.
+python3 -m http.server 4173 --bind 127.0.0.1 --directory web
+```
+
+Abra `http://127.0.0.1:4173` e use **Abrir dados locais** para selecionar `data/jogos/catalogo-local.json`. O navegador lê esse arquivo em memória, sem enviá-lo a um servidor e sem guardar os preços no armazenamento do navegador. Recarregar volta à demonstração. As capas dos jogos e fontes usam serviços externos; os preços locais não são enviados a eles.
+
+A busca, seleção de jogo, filtro de preço, horizontes de 30/90 dias e gráfico funcionam na demonstração e no catálogo importado. O terminal animado é uma **simulação**, não executa Python nem chamadas à API. A interface informa a data-base: o valor real é o fechamento do último dia completo do cache, não uma cotação ao vivo.
+
+## Modelo dos jogos
+
+- **Série:** último preço conhecido no fechamento de cada dia UTC, até o dia anterior à coleta de cada arquivo. Não antecipa eventos nem prolonga um cache antigo até hoje. Retirada da loja permanece como ausência de preço até a próxima oferta.
+- **Alvos:** chance de preço estritamente menor que o da origem em `h` dias; quantis do menor fechamento entre a origem e `origem + h`, incluindo a opção de comprar na origem. Isso difere de prever o preço no último dia ou simplesmente qualquer promoção.
+- **Atributos:** calendário, idade do histórico, preço/regular, desconto, tempo desde mudança/desconto e frequência, profundidade e mínimos retrospectivos de 30/90/365 dias.
+- **ML:** um `HistGradientBoostingClassifier` e três `HistGradientBoostingRegressor` de quantis. Treino determinístico, sem parada antecipada aleatória; quantis ordenados e limitados entre zero e o preço na origem.
+- **Avaliação:** origens semanais, pelo menos 365 dias de histórico, teste desde 2023 e retreino a cada 180 dias. Todos os modelos usam as mesmas origens e apenas alvos já completos no início da dobra. Os atributos de cada origem usam só o que era conhecido naquela data.
+- **Baselines:** manter o preço; taxa geral histórica; frequência do próprio jogo; mesma época do ano anterior (±15 dias, com fallback para a frequência do jogo). Os baselines também são congelados no início da dobra.
+- **Métricas:** Brier e log loss para a chance; pinball, erro da mediana e cobertura para os quantis. Menor Brier/pinball é melhor. Pinball é medido na razão entre o menor preço e o preço da origem, permitindo comparar jogos de preços diferentes.
+
+Resultados completos ficam em `data/jogos/resultados-modelo.json`, com configuração, cortes de treino/teste e recortes por ano/jogo. O arquivo é local; métricas agregadas podem ser documentadas aqui. O comando retorna erro se não houver origens elegíveis.
+
+### Resultados dos jogos em 03/11/2026
+
+Coleta concluída: **1.160/1.160 arquivos íntegros**, quatro históricos sem eventos e **1.156 séries**. Dados até o fechamento de 02/11/2026. Horizonte de 30 dias: **1.086 jogos e 198.212 origens**; de 90 dias: **1.081 jogos e 188.819 origens**. São oito cortes de treino/teste por horizonte, desde 2023, com a configuração padrão descrita acima.
+
+| Horizonte | Modelo | Brier | Pinball | Cobertura P10–P90 | MAE do menor preço |
+|---|---|---:|---:|---:|---:|
+| 30 dias | frequência do jogo | 0,2367 | 0,0777 | 84,8% | R$ 18,52 |
+| 30 dias | gradient boosting | 0,1382 | 0,0506 | 88,1% | R$ 11,86 |
+| 90 dias | frequência do jogo | 0,1943 | 0,0710 | 82,3% | R$ 10,64 |
+| 90 dias | gradient boosting | 0,0666 | 0,0290 | 84,8% | R$ 3,74 |
+
+- **30 dias:** redução de **41,6% no Brier** e **34,8% no pinball** frente à frequência do jogo. Melhora nas duas métricas em cada um dos quatro anos avaliados.
+- **90 dias:** redução de **65,7% no Brier** e **59,1% no pinball** frente à frequência do jogo. Melhora nas duas métricas em cada um dos quatro anos avaliados.
+
+O ML também superou os demais baselines em Brier e pinball agregados nesta rodada. Isso é redução de perda no backtest, **não aumento equivalente de “taxa de acerto”**, nem prova de desempenho futuro. Não houve ajuste de hiperparâmetros sobre esse teste. A cobertura nominal é de 80%; a observada está na tabela, sem calibração posterior. O alvo inclui muitos casos em que esperar não reduz o preço, então a distribuição tem massa no preço atual. Médias por origem dão mais peso a jogos com mais datas elegíveis.
+
+Limitações: universo escolhido pela popularidade atual (viés de sobrevivência), jogos e origens correlacionados, datas de promoções futuras não conhecidas, cobertura não garantida. Janelas futuras com indisponibilidade ficam fora dos rótulos: a avaliação é condicionada à disponibilidade contínua. Fechamentos diários podem perder promoções que começam e acabam no mesmo dia. A data do primeiro registro é idade do histórico, não necessariamente lançamento. A previsão não é recomendação de compra.
+
+## Site e GitHub Pages
+
+O site é HTML/CSS/JavaScript sem build ou backend. `web/demo.js` contém somente exemplos sintéticos; nunca carrega `.env` nem chama o ITAD. Os dados reais e previsões locais ficam em `data/`, ignorado pelo Git.
+
+```bash
+python3 scripts/preparar_site.py
+```
+
+Esse comando monta `_site/` com uma lista explícita de arquivos públicos. O workflow `.github/workflows/pages.yml` publica apenas esse pacote, em push na `main` que altere o site ou por execução manual. A origem do Pages é **GitHub Actions**; o endereço da demonstração é [juan-severiano.github.io/steam-price-forecast](https://juan-severiano.github.io/steam-price-forecast/). Não copie o catálogo local para `web/` ou para o pacote público.
+
+## Como funciona o módulo de itens
+
+O módulo secundário trata de skins e caixas do Mercado da Comunidade: onde o preço pode estar em 7/30 dias, em vez do menor preço de um jogo durante uma espera. Seus números abaixo são independentes do modelo de jogos.
 
 1. **Universo:** lista os itens mais negociados de um jogo pelo `search/render`, que é público.
 2. **Coleta:** baixa o histórico de preço de cada item pelo `pricehistory`, que **exige uma sessão logada**. Um arquivo por item em `data/raw/`; rodar de novo retoma de onde parou.
@@ -29,7 +96,7 @@ Métricas: erro absoluto da mediana, perda de quantil (pinball) média sobre P10
 - O formato do `pricehistory` (data `"Nov 01 2013 01: +0"`, preço em número, volume em texto) foi escrito a partir de relatos de terceiros e confirmado em 03/11/2026 com 5 itens: um ponto por dia nos dias antigos e 24 por dia nos últimos 30. É uma API não documentada, então o parser **falha alto** se a Steam mudar.
 - O preço vem na moeda da carteira da conta (o prefixo, como `R$`, é guardado junto).
 
-## Uso
+## Uso dos itens
 
 ```bash
 uv sync --extra dev
@@ -99,11 +166,11 @@ Gradient boosting com perda de quantil (`HistGradientBoostingRegressor`, extra `
 uv run steam-forecast modelo --saida data/resultados-modelo.json
 ```
 
-## Jogos da loja (em andamento)
+## Fonte e coleta dos jogos
 
-Segunda frente: prever o preço dos **jogos** da loja da Steam (o Stardew Valley, por exemplo), não dos itens. Preço de jogo anda em degraus, com liquidações sazonais, então a pergunta útil é "vale esperar?": chance de desconto nos próximos 30 e 90 dias e quanto se economiza esperando.
+O universo reúne 1.160 entradas do tipo `game` entre os populares/colecionados do IsThereAnyDeal com appid da Steam; pode incluir edições e servidores de teste classificados assim pela fonte. A coleta grava um JSON bruto por appid, com a data de aquisição, e retoma os arquivos pendentes.
 
-O histórico vem da API do [IsThereAnyDeal](https://isthereanydeal.com) (chave gratuita; mudanças de preço desde o lançamento, em reais). Preços fornecidos por IsThereAnyDeal; este projeto não é afiliado a eles. Uso pessoal: **o dado do IsThereAnyDeal não fica no repositório** (`data/` está no `.gitignore`), e os termos da API proíbem alterar os dados e concorrer com o serviço.
+O histórico vem da API do [IsThereAnyDeal](https://isthereanydeal.com), em reais. O cliente pede eventos desde 2005; a cobertura disponível varia por jogo e não comprova que todos tenham dados desde o lançamento. Preços fornecidos por IsThereAnyDeal; este projeto não é afiliado a eles. **Os dados reais não ficam no repositório nem na demonstração pública.** Consulte os [termos da API](https://docs.isthereanydeal.com/) antes de reutilizar ou publicar dados; a opção de importação é para explorar o catálogo pessoal localmente.
 
 ```bash
 # 1. chave: registre um app em https://isthereanydeal.com/apps/my/ e grave ITAD_API_KEY no .env
@@ -113,7 +180,7 @@ uv run steam-forecast jogos-universo
 uv run steam-forecast jogos-coletar --max-jogos 20
 ```
 
-**Ainda não existe** modelo nem resultado para jogos: só o universo (1.160 jogos), o cliente da API e a coleta, com testes. A coleta completa ainda está sendo estabilizada.
+Em `429`, o coletor respeita `Retry-After` (segundos, inclusive zero, ou data HTTP), acrescenta 1 s de folga e registra a espera imediatamente. Sem cabeçalho válido, usa 30/120/300 s; ao esgotar tentativas, salva o progresso e encerra com erro. Em 03/11 houve uma espera real de 247 s pedida pelo ITAD, seguida de retomada: poucas chamadas bem-sucedidas não descartam limitação em rodadas maiores. Falhas isoladas também produzem código de saída 1. `jogos-status --detalhes` confere identidade e integridade e lista o que falta; um arquivo com histórico vazio é coleta concluída, mas não vira série de treino.
 
 ## Limites conhecidos
 
