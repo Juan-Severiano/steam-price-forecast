@@ -2,7 +2,7 @@
 
 Previsão de preço de itens do Mercado da Comunidade Steam (skins e caixas de CS2, itens de Dota 2 e outros). A pergunta: **onde o preço de um item pode estar daqui a 7 e 30 dias?** A resposta é um **intervalo** (P10, P50, P90), e o projeto mede se esse intervalo ganha de "o preço de amanhã é o de hoje".
 
-> **Estado:** coleta do histórico, séries diárias e baselines em janela deslizante prontos e medidos em 232 itens do CS2 ([resultados](#resultados-dos-baselines)). O modelo de ML ainda não existe: o que está medido é o **piso que ele precisa vencer**. Isto não é recomendação financeira.
+> **Estado:** duas frentes. **Itens do mercado:** coleta, baselines e um modelo de gradient boosting com quantis, medidos em 232 itens do CS2 ([baselines](#resultados-dos-baselines), [modelo](#modelo-de-ml-dos-itens)). **Jogos da loja** (preço de jogo, como o Stardew Valley): universo e coleta do histórico prontos, [modelo ainda não](#jogos-da-loja-em-andamento). Isto não é recomendação financeira.
 
 ## Como funciona
 
@@ -75,6 +75,45 @@ Como ler:
 - A média móvel de 30 dias perde nos dois horizontes: apostar na volta à média não ajudou.
 - **Isto é o piso que um modelo de ML precisa vencer, não resultado de ML.** As origens se sobrepõem, a média simples pesa mais os itens de histórico longo, os itens se movem juntos (não são 232 amostras independentes) e é um único dia de coleta num único regime de mercado.
 - O dado bruto não está no repositório. Para reproduzir, rode os comandos acima; a lista de popularidade muda, então os números vão variar.
+
+## Modelo de ML dos itens
+
+Gradient boosting com perda de quantil (`HistGradientBoostingRegressor`, extra `ml`: `uv sync --extra ml`), três modelos por horizonte (P10, P50, P90). Atributos do dia de origem: retornos de 1 a 180 dias, volatilidade, volume, posição na faixa de 365 dias, idade do item e calendário; a variante "item + mercado" soma o retorno médio dos itens no mesmo dia. O alvo é padronizado pela volatilidade de 90 dias e cada linha pesa a escala, o que iguala a perda de treino à medida em unidades originais. O modelo é retreinado a cada 90 dias só com linhas cujo alvo já era conhecido, e prevê as mesmas origens dos baselines (teste de 01/01/2023 em diante, 16 dobras). Um teste de vazamento confere que mexer nos dados depois de uma dobra não muda as previsões dela.
+
+| Horizonte | Modelo | Pinball | vs referência | Cobertura P10-P90 | Itens melhores |
+|---|---|---|---|---|---|
+| 7 dias (35.840 origens) | naive + erro empírico | 0,0210 | referência | 79,6% | - |
+| 7 dias | GB só do item | 0,0199 | **-5,0%** | 76,3% | 81% |
+| 7 dias | GB item + mercado | 0,0200 | -4,9% | 75,9% | 80% |
+| 30 dias (35.121 origens) | naive + erro empírico | 0,0424 | referência | 76,7% | - |
+| 30 dias | GB só do item | 0,0414 | -2,1% | 71,5% | 58% |
+| 30 dias | GB item + mercado | 0,0416 | -1,8% | 69,7% | 58% |
+
+- **A 7 dias o ganho é pequeno, mas robusto:** melhora em todos os anos, de -3,4% a -6,2%.
+- **A 30 dias não há vantagem confiável:** por ano o resultado oscila (2023 pior em 1,2%, 2024 melhor em 8,9%, 2025 praticamente igual, 2026 melhor em 2,9%), e o ganho médio vem quase todo de 2024.
+- **Os intervalos do modelo são estreitos demais** (70% a 76% de cobertura para 80% nominais). Calibrar (por exemplo, com CQR) é o próximo passo desse módulo.
+- Os fatores de mercado não acrescentaram nada.
+- Mesmas ressalvas dos baselines: origens sobrepostas, itens correlacionados, um único dia de coleta. O universo é o top 300 de hoje, então há viés de sobrevivência.
+
+```bash
+uv run steam-forecast modelo --saida data/resultados-modelo.json
+```
+
+## Jogos da loja (em andamento)
+
+Segunda frente: prever o preço dos **jogos** da loja da Steam (o Stardew Valley, por exemplo), não dos itens. Preço de jogo anda em degraus, com liquidações sazonais, então a pergunta útil é "vale esperar?": chance de desconto nos próximos 30 e 90 dias e quanto se economiza esperando.
+
+O histórico vem da API do [IsThereAnyDeal](https://isthereanydeal.com) (chave gratuita; mudanças de preço desde o lançamento, em reais). Preços fornecidos por IsThereAnyDeal; este projeto não é afiliado a eles. Uso pessoal: **o dado do IsThereAnyDeal não fica no repositório** (`data/` está no `.gitignore`), e os termos da API proíbem alterar os dados e concorrer com o serviço.
+
+```bash
+# 1. chave: registre um app em https://isthereanydeal.com/apps/my/ e grave ITAD_API_KEY no .env
+# 2. jogos mais populares e mais colecionados do IsThereAnyDeal que existem na Steam
+uv run steam-forecast jogos-universo
+# 3. histórico de preço de cada jogo (cache em data/jogos/historico/, retoma de onde parou)
+uv run steam-forecast jogos-coletar --max-jogos 20
+```
+
+**Ainda não existe** modelo nem resultado para jogos: só o universo (1.160 jogos), o cliente da API e a coleta, com testes. A coleta completa ainda está sendo estabilizada.
 
 ## Limites conhecidos
 
