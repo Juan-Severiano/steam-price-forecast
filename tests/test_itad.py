@@ -10,11 +10,23 @@ from steam_forecast.itad import (
     ClienteITAD,
     RespostaInvalida,
     parsear_historico,
+    retry_after_segundos,
 )
 from steam_forecast.steam import LimiteExcedido
 
 SEGREDO = "chave-secreta-do-itad"
 GID = "018d937e-f835-710c-b95b-928e277b187e"
+
+
+@pytest.mark.parametrize("valor,esperado", [("0", 0), (" 2 ", 2), ("", None), ("-1", None), ("errado", None)])
+def test_retry_after_segundos_ou_ausente(valor, esperado):
+    assert retry_after_segundos(valor) == esperado
+
+
+def test_retry_after_data_http_e_data_passada():
+    agora = datetime(2026, 11, 3, 16, 0, 0, tzinfo=timezone.utc)
+    assert retry_after_segundos("Tue, 03 Nov 2026 16:00:02 GMT", agora) == 2
+    assert retry_after_segundos("Tue, 03 Nov 2026 15:59:59 GMT", agora) == 0
 
 
 def _evento(quando, preco=19.99, regular=24.99, corte=20, moeda="BRL"):
@@ -76,6 +88,18 @@ def test_formato_inesperado_falha_alto(ruim):
 def test_mais_de_uma_moeda_falha():
     with pytest.raises(RespostaInvalida):
         parsear_historico([_evento("2024-01-01T00:00:00Z"), _evento("2024-02-01T00:00:00Z", moeda="USD")], GID)
+
+
+@pytest.mark.parametrize("campo", ["price", "regular", "cut"])
+@pytest.mark.parametrize("valor", [float("nan"), float("inf"), float("-inf")])
+def test_numero_nao_finito_da_api_e_rejeitado(campo, valor):
+    evento = _evento("2024-01-01T00:00:00Z")
+    if campo == "cut":
+        evento["deal"][campo] = valor
+    else:
+        evento["deal"][campo]["amount"] = valor
+    with pytest.raises(RespostaInvalida, match="não finito"):
+        parsear_historico([evento], GID)
 
 
 def test_resposta_que_nao_e_lista_falha():

@@ -115,7 +115,7 @@ def coletar_jogos(
                     resumo.interrompida_por = "429 persistente: o ITAD pediu para esperar, tente mais tarde"
                     return resumo
                 # A API manda `Retry-After` no 429: obedecer esse valor (mais 1 s de folga); a tabela é só reserva.
-                espera = erro.retry_after + 1 if erro.retry_after else espera_429[tentativa]
+                espera = erro.retry_after + 1 if erro.retry_after is not None else espera_429[tentativa]
                 log(f"429 em {titulo!r}: esperando {espera} s (tentativa {tentativa + 1}/{len(espera_429)})")
                 dormir(espera)
                 tentativa += 1

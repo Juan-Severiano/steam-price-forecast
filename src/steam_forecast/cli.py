@@ -1,4 +1,4 @@
-"""steam-forecast: universo (público), coletar (com o cookie do dono) e avaliar."""
+"""steam-forecast: coleta, avaliação temporal e catálogo local de jogos e itens da Steam."""
 
 from __future__ import annotations
 
@@ -115,6 +115,86 @@ def _jogos_coletar(args: argparse.Namespace) -> int:
     if resumo.interrompida_por:
         print(f"interrompida: {resumo.interrompida_por}. O progresso está salvo; rode de novo para retomar.", file=sys.stderr)
         return 1
+    if resumo.falhas:
+        print("coleta incompleta: houve falhas; rode jogos-status e retome os jogos pendentes.", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _salvar_json(caminho: Path, valor: object) -> None:
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    temporario = caminho.with_suffix(caminho.suffix + ".tmp")
+    temporario.write_text(json.dumps(valor, ensure_ascii=False, indent=1, allow_nan=False), encoding="utf-8")
+    temporario.replace(caminho)
+
+
+def _positivo(texto: str) -> int:
+    valor = int(texto)
+    if valor <= 0:
+        raise argparse.ArgumentTypeError("precisa ser maior que zero")
+    return valor
+
+
+def _intervalo(texto: str) -> float:
+    from math import isfinite
+
+    valor = float(texto)
+    if not isfinite(valor) or valor < 0:
+        raise argparse.ArgumentTypeError("intervalo precisa ser finito e não negativo")
+    return valor
+
+
+def _jogos_status(args: argparse.Namespace) -> int:
+    from steam_forecast.exportacao_jogos import estado_coleta
+
+    estado = estado_coleta(args.universo, args.dados)
+    print(json.dumps(estado if args.detalhes else {k: v for k, v in estado.items() if k != "appids_faltantes"}, ensure_ascii=False, indent=1))
+    return 0 if estado["completa"] else 1
+
+
+def _jogos_avaliar(args: argparse.Namespace) -> int:
+    from datetime import date
+    import time
+
+    from steam_forecast.modelo_jogos import ConfiguracaoJogos, executar_jogos, tabela_markdown_jogos
+    from steam_forecast.series_jogos import carregar_series_jogos
+
+    series = carregar_series_jogos(args.dados)
+    inicio = (date.fromisoformat(args.inicio_teste) - date(1970, 1, 1)).days
+    print(f"{len(series)} séries de jogos; teste desde {args.inicio_teste}; cortes a cada {args.retreino} dias", flush=True)
+    resultados = []
+    for horizonte in args.horizonte:
+        cfg = ConfiguracaoJogos(
+            horizonte=horizonte, inicio_teste=inicio, retreino=args.retreino,
+            passo=args.passo, iteracoes=args.iteracoes, min_historia=args.historia_min,
+        )
+        t0 = time.monotonic()
+        resultado = executar_jogos(series, cfg, log=lambda m: print(m, file=sys.stderr, flush=True))
+        resultado["segundos"] = round(time.monotonic() - t0, 2)
+        resultados.append(resultado)
+        _salvar_json(args.saida, resultados)
+        print(tabela_markdown_jogos(resultado), f"\n({resultado['segundos']} s)\n", flush=True)
+    print(f"avaliação em {args.saida}")
+    return 0 if all(r.get("origens", 0) for r in resultados) else 1
+
+
+def _jogos_exportar(args: argparse.Namespace) -> int:
+    from steam_forecast.exportacao_jogos import catalogo_local
+    from steam_forecast.modelo_jogos import ConfiguracaoJogos, prever_jogos_agora
+    from steam_forecast.series_jogos import carregar_series_jogos
+
+    series = carregar_series_jogos(args.dados)
+    if not series:
+        print("nenhuma série de jogos disponível", file=sys.stderr)
+        return 1
+    previsoes = {}
+    for horizonte in args.horizonte:
+        cfg = ConfiguracaoJogos(horizonte=horizonte, inicio_teste=0, iteracoes=args.iteracoes)
+        previsoes[horizonte] = prever_jogos_agora(
+            series, horizonte, cfg=cfg, log=lambda m: print(m, file=sys.stderr, flush=True)
+        )
+    _salvar_json(args.saida, catalogo_local(series, previsoes, dias_historico=args.dias_historico))
+    print(f"{len(series)} jogos em {args.saida}; abra o arquivo pelo botão de importação local do site.")
     return 0
 
 
@@ -200,14 +280,41 @@ def main(argv: list[str] | None = None) -> int:
     jc.add_argument("--universo", type=Path, default=DADOS / "jogos" / "universo.json")
     jc.add_argument("--destino", type=Path, default=DADOS / "jogos" / "historico")
     jc.add_argument("--env", type=Path, default=Path(".env"))
-    jc.add_argument("--intervalo", type=float, default=0.5, help="segundos entre chamadas (o limite do ITAD é 1.000 a cada 5 min)")
-    jc.add_argument("--max-jogos", type=int, default=None, help="começar pequeno, por exemplo 20")
+    jc.add_argument("--intervalo", type=_intervalo, default=0.5, help="segundos entre chamadas (o limite do ITAD é 1.000 a cada 5 min)")
+    jc.add_argument("--max-jogos", type=_positivo, default=None, help="começar pequeno, por exemplo 20")
     jc.add_argument("--atualizar", action="store_true", help="baixa de novo o que já existe")
     jc.set_defaults(func=_jogos_coletar)
+
+    js = sub.add_parser("jogos-status", help="confere completude e integridade da coleta local, sem chamar a API")
+    js.add_argument("--universo", type=Path, default=DADOS / "jogos" / "universo.json")
+    js.add_argument("--dados", type=Path, default=DADOS / "jogos" / "historico")
+    js.add_argument("--detalhes", action="store_true", help="inclui a lista dos appids pendentes")
+    js.set_defaults(func=_jogos_status)
+
+    ja = sub.add_parser("jogos-avaliar", help="compara baselines e ML dos jogos em cortes temporais (extra ml)")
+    ja.add_argument("--dados", type=Path, default=DADOS / "jogos" / "historico")
+    ja.add_argument("--horizonte", type=_positivo, action="append", help="dias; padrão: 30 e 90")
+    ja.add_argument("--inicio-teste", default="2023-01-01")
+    ja.add_argument("--retreino", type=_positivo, default=180)
+    ja.add_argument("--passo", type=_positivo, default=7)
+    ja.add_argument("--iteracoes", type=_positivo, default=80)
+    ja.add_argument("--historia-min", type=_positivo, default=365)
+    ja.add_argument("--saida", type=Path, default=DADOS / "jogos" / "resultados-modelo.json")
+    ja.set_defaults(func=_jogos_avaliar)
+
+    je = sub.add_parser("jogos-exportar", help="treina com alvos conhecidos e gera catálogo para importação local (extra ml)")
+    je.add_argument("--dados", type=Path, default=DADOS / "jogos" / "historico")
+    je.add_argument("--horizonte", type=_positivo, action="append", help="dias; padrão: 30 e 90")
+    je.add_argument("--iteracoes", type=_positivo, default=80)
+    je.add_argument("--dias-historico", type=_positivo, default=365)
+    je.add_argument("--saida", type=Path, default=DADOS / "jogos" / "catalogo-local.json")
+    je.set_defaults(func=_jogos_exportar)
 
     args = ap.parse_args(argv)
     if args.comando in ("avaliar", "modelo") and not args.horizonte:
         args.horizonte = [7, 30]
+    if args.comando in ("jogos-avaliar", "jogos-exportar") and not args.horizonte:
+        args.horizonte = [30, 90]
     return args.func(args)
 
 

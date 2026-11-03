@@ -179,6 +179,13 @@ def test_429_curto_nao_trava_a_rodada(tmp_path):
     assert r.baixados == 3 and sum(dormiu) < 10
 
 
+def test_429_com_zero_aguarda_so_a_folga(tmp_path):
+    dormiu = []
+    r = _coletar(ClienteFalso([LimiteExcedido(0), BRUTO]), _jogos(1), tmp_path, dormir=dormiu.append)
+    assert r.baixados == 1
+    assert dormiu == [1]
+
+
 def test_429_persistente_interrompe_sem_gravar(tmp_path):
     r = _coletar(ClienteFalso([LimiteExcedido(None)] * 4), _jogos(1, 2), tmp_path, espera_429=(1, 2, 3))
     assert r.baixados == 0 and "429" in r.interrompida_por

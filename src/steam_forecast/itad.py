@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from math import ceil
 
 import httpx
 import numpy as np
@@ -76,6 +78,8 @@ def parsear_historico(bruto: object, gid: str, appid: int | None = None, titulo:
                 preco[i] = float(deal["price"]["amount"])
                 regular[i] = float(deal["regular"]["amount"])
                 desconto[i] = float(deal["cut"])
+                if not np.isfinite([preco[i], regular[i], desconto[i]]).all():
+                    raise RespostaInvalida(f"evento {i} contém preço ou desconto não finito")
                 moedas.add(str(deal["price"]["currency"]))
         except RespostaInvalida:
             raise
@@ -91,10 +95,24 @@ def parsear_historico(bruto: object, gid: str, appid: int | None = None, titulo:
     return HistoricoJogo(gid, moedas.pop() if moedas else "", ts, preco, regular, desconto, appid, titulo)
 
 
+def retry_after_segundos(valor: str, agora: datetime | None = None) -> int | None:
+    """Retry-After aceita segundos (inclusive zero) ou uma data HTTP, conforme RFC 9110."""
+    valor = valor.strip()
+    if valor.isascii() and valor.isdigit():
+        return int(valor)
+    try:
+        momento = parsedate_to_datetime(valor)
+        if momento.tzinfo is None:
+            return None
+        return max(0, ceil((momento - (agora or datetime.now(timezone.utc))).total_seconds()))
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
 def _checar(resposta: httpx.Response) -> None:
     if resposta.status_code == 429:
         espera = resposta.headers.get("Retry-After", "")
-        raise LimiteExcedido(int(espera) if espera.isdigit() else None)
+        raise LimiteExcedido(retry_after_segundos(espera))
     if resposta.status_code in (401, 403):
         raise ChaveRecusada(f"HTTP {resposta.status_code}: chave errada, ausente ou sem permissão")
     resposta.raise_for_status()
