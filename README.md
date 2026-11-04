@@ -36,7 +36,7 @@ A busca, seleção de jogo, filtro de preço, horizontes de 30/90 dias e gráfic
 - **Atributos:** calendário, idade do histórico, preço/regular, desconto, tempo desde mudança/desconto e frequência, profundidade e mínimos retrospectivos de 30/90/365 dias.
 - **ML:** um `HistGradientBoostingClassifier` e três `HistGradientBoostingRegressor` de quantis. Treino determinístico, sem parada antecipada aleatória; quantis ordenados e limitados entre zero e o preço na origem.
 - **Avaliação:** origens semanais, pelo menos 365 dias de histórico, teste desde 2023 e retreino a cada 180 dias. Todos os modelos usam as mesmas origens e apenas alvos já completos no início da dobra. Os atributos de cada origem usam só o que era conhecido naquela data.
-- **Baselines:** manter o preço; taxa geral histórica; frequência do próprio jogo; mesma época do ano anterior (±15 dias, com fallback para a frequência do jogo). Os baselines também são congelados no início da dobra.
+- **Baselines:** manter o preço; taxa geral histórica; frequência do próprio jogo; mesma época do ano anterior (±15 dias, com fallback para a frequência do jogo). Os baselines também são congelados no início da dobra. Duas réguas **conhecem o estado atual** do jogo (se ele já está em promoção, como o ML): a **taxa por estado** e a **frequência do jogo dado o estado** (a taxa do próprio jogo naquele estado, com pelo menos 5 origens de treino; abaixo disso vale a taxa geral do estado). Elas existem porque as outras réguas ignoram o estado, e o ML o enxerga.
 - **Métricas:** Brier e log loss para a chance; pinball, erro da mediana e cobertura para os quantis. Menor Brier/pinball é melhor. Pinball é medido na razão entre o menor preço e o preço da origem, permitindo comparar jogos de preços diferentes.
 
 Resultados completos ficam em `data/jogos/resultados-modelo.json`, com configuração, cortes de treino/teste e recortes por ano/jogo. O arquivo é local; métricas agregadas podem ser documentadas aqui. O comando retorna erro se não houver origens elegíveis.
@@ -48,14 +48,20 @@ Coleta concluída: **1.160/1.160 arquivos íntegros**, quatro históricos sem ev
 | Horizonte | Modelo | Brier | Pinball | Cobertura P10–P90 | MAE do menor preço |
 |---|---|---:|---:|---:|---:|
 | 30 dias | frequência do jogo | 0,2367 | 0,0777 | 84,8% | R$ 18,52 |
+| 30 dias | taxa por estado | 0,1980 | 0,0737 | 88,3% | R$ 20,99 |
+| 30 dias | frequência do jogo dado o estado | 0,1683 | 0,0566 | 85,6% | R$ 13,79 |
 | 30 dias | gradient boosting | 0,1382 | 0,0506 | 88,1% | R$ 11,86 |
 | 90 dias | frequência do jogo | 0,1943 | 0,0710 | 82,3% | R$ 10,64 |
+| 90 dias | taxa por estado | 0,1241 | 0,0551 | 87,7% | R$ 10,54 |
+| 90 dias | frequência do jogo dado o estado | 0,0948 | 0,0416 | 80,6% | R$ 7,69 |
 | 90 dias | gradient boosting | 0,0666 | 0,0290 | 84,8% | R$ 3,74 |
 
-- **30 dias:** redução de **41,6% no Brier** e **34,8% no pinball** frente à frequência do jogo. Melhora nas duas métricas em cada um dos quatro anos avaliados.
-- **90 dias:** redução de **65,7% no Brier** e **59,1% no pinball** frente à frequência do jogo. Melhora nas duas métricas em cada um dos quatro anos avaliados.
+- **30 dias:** o ML reduz o Brier em 41,6% e o pinball em 34,8% contra a frequência do jogo, mas só **17,9% e 10,6%** contra a régua mais forte (a frequência do jogo dado o estado).
+- **90 dias:** 65,7% e 59,1% contra a frequência do jogo; **29,8% e 30,3%** contra a mais forte.
+- Contra a mais forte, o ML melhora o Brier em cada um dos quatro anos avaliados, nos dois horizontes. No pinball, o único quase empate é 2023 a 30 dias (−0,1%).
+- Por que as réguas com estado: a 30 dias, 60,7% das origens no preço cheio veem um preço menor depois, contra 4,2% das que já estão em promoção (a 90 dias, 86,8% e 18,0%). As primeiras réguas davam a mesma chance aos dois grupos.
 
-O ML também superou os demais baselines em Brier e pinball agregados nesta rodada. Isso é redução de perda no backtest, **não aumento equivalente de “taxa de acerto”**, nem prova de desempenho futuro. Não houve ajuste de hiperparâmetros sobre esse teste. A cobertura nominal é de 80%; a observada está na tabela, sem calibração posterior. O alvo inclui muitos casos em que esperar não reduz o preço, então a distribuição tem massa no preço atual. Médias por origem dão mais peso a jogos com mais datas elegíveis.
+O ML superou todos os baselines em Brier e pinball agregados nesta rodada, inclusive os que conhecem o estado. Isso é redução de perda no backtest, **não aumento equivalente de “taxa de acerto”**, nem prova de desempenho futuro. Não houve ajuste de hiperparâmetros sobre esse teste. A cobertura nominal é de 80%; a observada está na tabela, sem calibração posterior. O alvo inclui muitos casos em que esperar não reduz o preço, então a distribuição tem massa no preço atual. Médias por origem dão mais peso a jogos com mais datas elegíveis.
 
 Limitações: universo escolhido pela popularidade atual (viés de sobrevivência), jogos e origens correlacionados, datas de promoções futuras não conhecidas, cobertura não garantida. Janelas futuras com indisponibilidade ficam fora dos rótulos: a avaliação é condicionada à disponibilidade contínua. Fechamentos diários podem perder promoções que começam e acabam no mesmo dia. A data do primeiro registro é idade do histórico, não necessariamente lançamento. A previsão não é recomendação de compra.
 
