@@ -6,7 +6,7 @@ import pytest
 pytest.importorskip("sklearn")
 
 from steam_forecast.modelo_jogos import (  # noqa: E402
-    ATUAL, GERAL, JOGO, ML, ConfiguracaoJogos, NOMES, atributos_jogo,
+    ATUAL, ESTADO, GERAL, JOGO, JOGO_ESTADO, ML, ConfiguracaoJogos, NOMES, atributos_jogo,
     executar_jogos, montar_painel_jogos, prever_avaliacao_jogos,
     prever_jogos_agora, selecionar_treino_jogos, tabela_markdown_jogos,
 )
@@ -88,6 +88,26 @@ def test_aprende_promocao_periodica_com_avaliacao_temporal():
     assert modelos[ML]["pinball"] < modelos[GERAL]["pinball"]
     assert resultado["por_jogo"] and resultado["por_ano"]
     assert "gradient boosting" in tabela_markdown_jogos(resultado)
+
+
+def test_reguas_com_estado_sabem_que_quem_ja_esta_em_promocao_nao_cai_mais():
+    series = [_periodica(appid=i + 1) for i in range(4)]
+    p = prever_avaliacao_jogos(series, _cfg(retreino=400, iteracoes=10))
+    em_promocao = p.preco < 100  # na série periódica, 50 é o preço da promoção
+    assert em_promocao.sum() > 10 and (~em_promocao).sum() > 10
+    for regua in (ESTADO, JOGO_ESTADO):
+        assert (p.probabilidades[regua][em_promocao] == 0).all(), regua  # nunca baixou mais de 50
+        assert (p.probabilidades[regua][~em_promocao] > 0).all(), regua
+    # a régua que ignora o estado dá chance positiva até a quem já está no preço mais baixo
+    assert (p.probabilidades[JOGO][em_promocao] > 0).all()
+
+
+def test_com_estado_a_regua_melhora_mas_o_ml_ainda_ganha_nesta_serie():
+    series = [_periodica(appid=i + 1) for i in range(8)]
+    modelos = executar_jogos(series, _cfg(retreino=400, iteracoes=60))["modelos"]
+    assert modelos[ESTADO]["brier"] < modelos[JOGO]["brier"]  # nesta série, só um pouco: a promoção é rara
+    assert modelos[ML]["brier"] < modelos[JOGO_ESTADO]["brier"]
+    assert modelos[ML]["brier_vs_jogo_estado"] < 0 < modelos[JOGO]["brier_vs_jogo_estado"]
 
 
 def test_uma_classe_e_preco_constante_nao_exigem_duas_classes():

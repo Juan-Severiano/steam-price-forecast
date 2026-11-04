@@ -28,6 +28,11 @@ ATUAL = "preço atual"
 GERAL = "taxa geral histórica"
 JOGO = "frequência do jogo"
 SAZONAL = "mesma época do ano anterior"
+# As quatro réguas acima ignoram se o jogo já está em promoção hoje; o ML sabe disso (desconto_atual).
+# Estas duas sabem, para a comparação não premiar o ML só por enxergar o estado atual.
+ESTADO = "taxa por estado"
+JOGO_ESTADO = "frequência do jogo dado o estado"
+MIN_ESTADO = 5  # linhas de treino do jogo naquele estado; abaixo disso vale a taxa geral do estado
 ML = "gradient boosting"
 NOMES = (
     "ano_seno", "ano_cosseno", "semana_seno", "semana_cosseno", "idade_dias",
@@ -38,6 +43,7 @@ NOMES = (
     "retorno_365", "minimo_365", "frequencia_desconto_365", "desconto_medio_365",
     "disponibilidade_365",
 )
+COL_DESCONTO = NOMES.index("desconto_atual")
 
 
 @dataclass(frozen=True)
@@ -214,6 +220,15 @@ def _baselines(p: PainelJogos, treino: np.ndarray, teste: np.ndarray) -> tuple[d
     media, quantil = _empirico(p, treino)
     probs = {ATUAL: np.zeros(n), GERAL: np.full(n, media), JOGO: np.full(n, media), SAZONAL: np.full(n, media)}
     qs = {ATUAL: np.ones((n, 3)), GERAL: np.tile(quantil, (n, 1)), JOGO: np.tile(quantil, (n, 1)), SAZONAL: np.tile(quantil, (n, 1))}
+    # Réguas que conhecem o estado: o mesmo cálculo, separado entre "já em promoção" e "preço cheio".
+    em_treino, em_teste = p.X[treino, COL_DESCONTO] > 0, p.X[teste, COL_DESCONTO] > 0
+    por_estado = {}
+    for estado in (True, False):
+        linhas = treino[em_treino == estado]
+        por_estado[estado] = _empirico(p, linhas) if linhas.size else (media, quantil)
+    probs[ESTADO] = np.where(em_teste, por_estado[True][0], por_estado[False][0])
+    qs[ESTADO] = np.where(em_teste[:, None], por_estado[True][1], por_estado[False][1])
+    probs[JOGO_ESTADO], qs[JOGO_ESTADO] = probs[ESTADO].copy(), qs[ESTADO].copy()
     for item in np.unique(p.item[teste]):
         no_teste = np.flatnonzero(p.item[teste] == item)
         historico = treino[p.item[treino] == item]
@@ -224,6 +239,12 @@ def _baselines(p: PainelJogos, treino: np.ndarray, teste: np.ndarray) -> tuple[d
         probs[SAZONAL][no_teste] = prob
         qs[JOGO][no_teste] = q
         qs[SAZONAL][no_teste] = q
+        em_historico = p.X[historico, COL_DESCONTO] > 0
+        for estado in (True, False):
+            do_estado = historico[em_historico == estado]
+            alvo = no_teste[em_teste[no_teste] == estado]
+            if do_estado.size >= MIN_ESTADO and alvo.size:
+                probs[JOGO_ESTADO][alvo], qs[JOGO_ESTADO][alvo] = _empirico(p, do_estado)
         dias = p.dia[historico]
         for j in no_teste:
             # ±15 dias em torno da mesma data um ano antes; ano bissexto
@@ -304,8 +325,9 @@ def executar_jogos(series: Sequence[SerieJogo], cfg: ConfiguracaoJogos, *, log: 
         modelos = {nome: _metricas(prob[mascara], p.quantis[nome][mascara], p.real[mascara], p.baixou[mascara], p.preco[mascara]) for nome, prob in p.probabilidades.items()}
         for m in modelos.values():
             for metrica in ("brier", "pinball"):
-                ref = modelos[JOGO][metrica]
-                m[f"{metrica}_vs_frequencia"] = m[metrica] / ref - 1 if ref > 1e-12 else None
+                for sufixo, regua in (("vs_frequencia", JOGO), ("vs_jogo_estado", JOGO_ESTADO)):
+                    ref = modelos[regua][metrica]
+                    m[f"{metrica}_{sufixo}"] = m[metrica] / ref - 1 if ref > 1e-12 else None
         return {"origens": int(mascara.sum()), "frequencia_preco_menor": float(p.baixou[mascara].mean()), "modelos": modelos}
 
     base.update(resumo(np.ones(p.dia.size, dtype=bool)))
